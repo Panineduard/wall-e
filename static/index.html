@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Валлі</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0d0d0d; color: #e0e0e0;
+  font-family: sans-serif;
+  display: flex; flex-direction: column; align-items: center;
+  min-height: 100vh; padding: 24px 16px; gap: 16px;
+}
+h1 { font-size: 1.5rem; color: #f5c518; }
+
+#statusbar {
+  width: 100%; max-width: 420px;
+  background: #111; border-radius: 8px;
+  padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+#status-row {
+  display: flex; align-items: center; gap: 8px;
+}
+#dot { width: 9px; height: 9px; border-radius: 50%; background: #4caf50; flex-shrink: 0; }
+#dot.busy { background: #f5c518; }
+#status-text { font-size: 0.9rem; color: #ccc; font-weight: 600; }
+#cmd-text { font-size: 0.72rem; color: #555; }
+#dbg { font-size: 0.7rem; color: #f5c518; word-break: break-all; min-height: 1em; }
+
+#talk-btn {
+  width: 140px; height: 140px; border-radius: 50%;
+  background: #1a1a1a; border: 3px solid #f5c518;
+  color: #f5c518; font-size: 1rem; font-weight: 700; cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+#talk-btn.active { background: #f5c518; color: #0d0d0d; transform: scale(1.06); }
+
+.label { font-size: 0.68rem; color: #555; letter-spacing: 0.1em; text-transform: uppercase; align-self: flex-start; max-width: 420px; }
+.btn-grid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; width: 100%; max-width: 420px; }
+.cbtn {
+  background: #161616; border: 2px solid #2a2a2a;
+  border-radius: 10px; color: #ccc; font-size: 0.82rem;
+  padding: 10px 16px; cursor: pointer; transition: border-color 0.15s, color 0.15s;
+}
+.cbtn.active { border-color: #f5c518; color: #f5c518; }
+
+#dpad { display: grid; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 64px); gap: 8px; }
+.mv {
+  background: #161616; border: 2px solid #2a2a2a; border-radius: 10px;
+  color: #e0e0e0; font-size: 1.4rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s, border-color 0.1s;
+  user-select: none;
+}
+.mv.active { background: #f5c518; color: #0d0d0d; border-color: #f5c518; }
+</style>
+</head>
+<body>
+
+<h1>🤖 ВАЛЛІ</h1>
+
+<div id="statusbar">
+  <div id="status-row">
+    <div id="dot"></div>
+    <span id="status-text">Підключення...</span>
+  </div>
+  <div id="cmd-text">— очікування —</div>
+  <div id="dbg"></div>
+</div>
+
+<button id="talk-btn" onclick="doTalk()">🎤 ГОВОРИ</button>
+
+<div class="label">Казки</div>
+<div class="btn-grid">
+  <button class="cbtn" onclick="doContent(this, '/tale?key=sirko')">🐕 Сірко</button>
+  <button class="cbtn" onclick="doContent(this, '/tale?key=kolobok')">🍞 Колобок</button>
+  <button class="cbtn" onclick="doContent(this, '/tale?key=ivasyk')">🚣 Івасик</button>
+</div>
+
+<div class="label">Пісні</div>
+<div class="btn-grid">
+  <button class="cbtn" onclick="doContent(this, '/song?key=smarahdove_nebo')">🎵 Смарагдове небо</button>
+</div>
+
+<div class="label">Розваги</div>
+<div class="btn-grid">
+  <button class="cbtn" onclick="startDance('/dance','Танцюю',this)">🕺 Танець</button>
+  <button class="cbtn" onclick="startDance('/disco','Диско!',this)">🪩 Диско</button>
+  <button class="cbtn" onclick="endDance(this)">⏹ Стоп</button>
+</div>
+
+<audio id="dance-audio" loop>
+  <source src="/dance.mp3" type="audio/mpeg">
+</audio>
+
+<div class="label">Голова</div>
+<div class="btn-grid">
+  <button class="mv" style="width:64px;height:64px" onpointerdown="doHead('left')" onpointerup="doHead('center')">←</button>
+  <button class="mv" style="width:64px;height:64px" onpointerdown="doHead('right')" onpointerup="doHead('center')">→</button>
+</div>
+
+<div class="label">Рух</div>
+<div id="dpad">
+  <div></div>
+  <button class="mv" id="mv-forward" onpointerdown="doMotor(this,'forward')" onpointerup="stopMotor(this)">↑</button>
+  <div></div>
+  <button class="mv" id="mv-left"    onpointerdown="doMotor(this,'left')"    onpointerup="stopMotor(this)">←</button>
+  <button class="mv" id="mv-stop"    onclick="doMotor(this,'stop')">■</button>
+  <button class="mv" id="mv-right"   onpointerdown="doMotor(this,'right')"   onpointerup="stopMotor(this)">→</button>
+  <div></div>
+  <button class="mv" id="mv-backward" onpointerdown="doMotor(this,'backward')" onpointerup="stopMotor(this)">↓</button>
+  <div></div>
+</div>
+
+<script>
+var BASE = 'http://' + location.hostname;
+var _activeBtn = null;
+
+function dbg(msg) {
+  document.getElementById('dbg').textContent = msg;
+  console.log(msg);
+}
+
+function setCmd(msg) {
+  document.getElementById('cmd-text').textContent = msg;
+}
+
+function setStatus(text, busy) {
+  document.getElementById('status-text').textContent = text;
+  document.getElementById('dot').className = busy ? 'busy' : '';
+}
+
+function setActive(btn) {
+  if (_activeBtn && _activeBtn !== btn) {
+    _activeBtn.classList.remove('active');
+  }
+  if (btn) btn.classList.add('active');
+  _activeBtn = btn;
+}
+
+function get(url, label, btn) {
+  setCmd('▶ ' + label);
+  if (btn) setActive(btn);
+  dbg('→ ' + url);
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', BASE + url, true);
+  xhr.onload = function() {
+    dbg('✓ ' + url + ' [' + xhr.status + ']');
+  };
+  xhr.onerror = function() {
+    dbg('✗ помилка: ' + url);
+    setCmd('— помилка —');
+  };
+  xhr.send();
+}
+
+var _danceAudio = null;
+
+function startDance(url, label, btn) {
+  get(url, label, btn);
+  _danceAudio = document.getElementById('dance-audio');
+  _danceAudio.currentTime = 0;
+  _danceAudio.play().catch(function(e) { dbg('audio: ' + e); });
+}
+
+function stopDance() {
+  if (_danceAudio) { _danceAudio.pause(); _danceAudio.currentTime = 0; }
+}
+
+function endDance(btn) {
+  stopDance();
+  get('/stopdance', 'Стоп', btn);
+}
+
+function doHead(dir) { get('/head?dir=' + dir, 'Голова ' + dir, null); }
+
+function doTalk() {
+  var btn = document.getElementById('talk-btn');
+  setActive(btn);
+  get('/listen', 'Слухаю...', null);
+  setStatus('Слухаю...', true);
+}
+
+function doContent(btn, url) {
+  var name = btn.textContent.trim();
+  get(url, name, btn);
+}
+
+function doMotor(btn, action) {
+  var labels = { forward:'Вперед', backward:'Назад', left:'Ліво', right:'Право', stop:'Стоп' };
+  get('/motor?action=' + action, labels[action] || action, btn);
+}
+
+function stopMotor(btn) {
+  btn.classList.remove('active');
+  get('/motor?action=stop', 'Стоп', null);
+}
+
+// Status poll
+setInterval(function() {
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', BASE + '/status', true);
+  xhr.onload = function() {
+    try {
+      var d = JSON.parse(xhr.responseText);
+      var busy = d.status !== 'Готово';
+      setStatus(d.status, busy);
+      if (!busy) { setActive(null); stopDance(); }
+    } catch(e) {}
+  };
+  xhr.onerror = function() {
+    setStatus('Немає зв\'язку', false);
+  };
+  xhr.send();
+}, 1000);
+
+dbg('JS OK · ' + BASE);
+</script>
+</body>
+</html>
